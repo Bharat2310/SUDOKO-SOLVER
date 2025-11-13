@@ -3,35 +3,15 @@ from flask_cors import CORS
 from solver import solve_sudoku, validate_board
 import copy
 import os
+import requests
 
 app = Flask(__name__, static_folder='static')
-CORS(app)  # Enable CORS for frontend-backend communication
+CORS(app)
 
 
 @app.route('/solve', methods=['POST'])
 def solve():
-    """
-    Endpoint to solve a Sudoku puzzle.
-    
-    Expected JSON format:
-    {
-        "board": [
-            [5,3,0,0,7,0,0,0,0],
-            [6,0,0,1,9,5,0,0,0],
-            ...
-        ]
-    }
-    
-    Returns:
-    {
-        "success": true/false,
-        "original": [...],
-        "solution": [...],
-        "message": "..."
-    }
-    """
     try:
-        # Get JSON data
         data = request.get_json()
         
         if not data or 'board' not in data:
@@ -42,7 +22,6 @@ def solve():
         
         board = data['board']
         
-        # Validate board format
         is_valid, error_msg = validate_board(board)
         if not is_valid:
             return jsonify({
@@ -50,10 +29,8 @@ def solve():
                 'message': f'Invalid board: {error_msg}'
             }), 400
         
-        # Keep original for response
         original_board = copy.deepcopy(board)
         
-        # Solve the puzzle
         if solve_sudoku(board):
             return jsonify({
                 'success': True,
@@ -75,9 +52,46 @@ def solve():
         }), 500
 
 
+@app.route('/get-puzzle', methods=['GET'])
+def get_puzzle():
+    try:
+        response = requests.get('https://sudoku-api.vercel.app/api/dosuku', timeout=10)
+        
+        if response.status_code != 200:
+            return jsonify({
+                'success': False,
+                'message': 'Failed to fetch puzzle from API'
+            }), 500
+        
+        data = response.json()
+        
+        puzzle_data = data['newboard']['grids'][0]
+        puzzle_board = puzzle_data['value']
+        solution_board = puzzle_data['solution']
+        difficulty = puzzle_data['difficulty']
+        
+        return jsonify({
+            'success': True,
+            'board': puzzle_board,
+            'solution': solution_board,
+            'difficulty': difficulty,
+            'message': 'Puzzle loaded successfully'
+        }), 200
+    
+    except requests.exceptions.RequestException as e:
+        return jsonify({
+            'success': False,
+            'message': f'Network error: {str(e)}'
+        }), 500
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Server error: {str(e)}'
+        }), 500
+
+
 @app.route('/health', methods=['GET'])
 def health():
-    """Health check endpoint."""
     return jsonify({
         'status': 'healthy',
         'service': 'Sudoku Solver API'
@@ -86,13 +100,11 @@ def health():
 
 @app.route('/', methods=['GET'])
 def home():
-    """Serve the frontend HTML."""
     return send_from_directory('static', 'index.html')
 
 
 @app.route('/<path:path>')
 def serve_static(path):
-    """Serve static files."""
     return send_from_directory('static', path)
 
 
